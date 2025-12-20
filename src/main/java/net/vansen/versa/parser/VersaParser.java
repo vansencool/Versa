@@ -87,9 +87,9 @@ public class VersaParser {
             String raw = lines[ln];
             int col = 0;
             while (col < raw.length() && (raw.charAt(col) == ' ' || raw.charAt(col) == '\t')) col++;
-            String rest = raw.substring(col);
+            String rest = raw.substring(col).strip();
 
-            if (rest.isEmpty()) {
+            if (rest.isBlank()) {
                 stack.peek().order.add(new Entry(EntryType.EMPTY_LINE, null));
                 ln++;
                 continue;

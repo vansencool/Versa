@@ -23,14 +23,13 @@ Works great with small configs, scales to massive ones just as easily.
 ✔ **NodeBuilder API** for generating configs in code  
 ✔ **Merge support** for default + user configs  
 ✔ Can load, modify, save and reformat configs easily  
-✔ Adapters let you bind config data to real objects
+✔ Config Loader & Adapters let you bind config data to real objects
 
 ---
 
 <div align="center">
 
 ## **Installation**
-
 
 ### **Gradle**
 </div>
@@ -180,7 +179,7 @@ Supports branches, nested objects, lists, and custom serialized types.
 ### Example configuration class
 
 ```java
-@ConfigFile("config.versa")
+@ConfigFile("config.conf")
 public static class AppConfig {
 
     @ConfigPath("name")
@@ -292,8 +291,6 @@ on different config sizes and structures.
 | medium | 1.706 ms | **0.450 ms** | ~3.8x |
 | large | 116.637 ms | **18.485 ms** | ~6.3x |
 | insane | 5857.540 ms | **1650.671 ms** | ~3.5x |
-
-Versa remains fast on small configs, scales much better for large ones.
 
 ---
 

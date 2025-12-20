@@ -23,7 +23,7 @@ import java.util.Collections;
  */
 @SuppressWarnings("unused")
 public class ValueBuilder {
-    private final Value val = new Value();
+    private Value val = new Value();
 
 
     /**
@@ -33,6 +33,18 @@ public class ValueBuilder {
      */
     public static ValueBuilder builder() {
         return new ValueBuilder();
+    }
+
+    /**
+     * Creates a new builder instance from a provided Value.
+     *
+     * @param val the value to create a ValueBuilder from
+     * @return a fresh {@link ValueBuilder} from the provided value.
+     */
+    public static ValueBuilder builder(Value val) {
+        ValueBuilder builder = new ValueBuilder();
+        builder.val = val;
+        return builder;
     }
 
     /**

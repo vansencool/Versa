@@ -772,10 +772,15 @@ public class Node {
 
             if (e.t == EntryType.COMMENT) {
                 Comment c = (Comment) e.o;
-                sb.append(pad)
-                        .append(c.slash ? "//" : "#")
-                        .append(c.text)
-                        .append("\n");
+                String prefix = c.slash ? "//" : "#";
+                String[] lines = c.text.split("\\R");
+
+                for (String line : lines) {
+                    sb.append(pad)
+                            .append(prefix)
+                            .append(line)
+                            .append("\n");
+                }
                 continue;
             }
 
@@ -787,8 +792,12 @@ public class Node {
                         .append(v);
 
                 for (Comment c : v.comments)
-                    if (c.type == CommentType.INLINE_VALUE)
+                    if (c.type == CommentType.INLINE_VALUE) {
+                        if (c.text.indexOf('\n') != -1)
+                            throw new IllegalStateException("Inline comment cannot be multiline");
+
                         sb.append(" ").append(c.slash ? "//" : "#").append(c.text);
+                    }
 
                 sb.append("\n");
                 continue;
@@ -800,16 +809,34 @@ public class Node {
                 sb.append(pad).append(ch.name).append(" {");
 
                 for (Comment c : ch.inlineComments)
-                    if (c.type == CommentType.START_BRANCH)
-                        sb.append(" ").append(c.slash ? "//" : "#").append(c.text);
+                    if (c.type == CommentType.START_BRANCH) {
+                        String[] lines = c.text.split("\\R");
+                        sb.append(" ").append(c.slash ? "//" : "#").append(lines[0]).append("\n");
+
+                        for (int i = 1; i < lines.length; i++)
+                            sb.append(pad)
+                                    .append("    ")
+                                    .append(c.slash ? "//" : "#")
+                                    .append(lines[i])
+                                    .append("\n");
+                    }
 
                 sb.append("\n");
                 sb.append(ch.toString(depth + 1));
                 sb.append(pad).append("}");
 
                 for (Comment c : ch.inlineComments)
-                    if (c.type == CommentType.END_BRANCH)
-                        sb.append(" ").append(c.slash ? "//" : "#").append(c.text);
+                    if (c.type == CommentType.END_BRANCH) {
+                        String[] lines = c.text.split("\\R");
+                        sb.append(" ").append(c.slash ? "//" : "#").append(lines[0]).append("\n");
+
+                        for (int i = 1; i < lines.length; i++)
+                            sb.append(pad)
+                                    .append("    ")
+                                    .append(c.slash ? "//" : "#")
+                                    .append(lines[i])
+                                    .append("\n");
+                    }
 
                 sb.append("\n");
             }
