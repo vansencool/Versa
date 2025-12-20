@@ -40,7 +40,7 @@ repositories {
 }
 
 dependencies {
-    implementation 'com.github.vansencool:Versa:2.2.5'
+    implementation 'com.github.vansencool:Versa:2.3.0'
 }
 ```
 
@@ -322,6 +322,5 @@ losing original comments, spacing and config structure.
 
 ## Notes
 
-There is a lot more to explore inside Versa.
-
-**Documentation is coming soon.**
+[`USAGE.md`](USAGE.md) covers common and practical usage examples, but does not document every available method.
+Versa is flexible by design, so exploring the API and its Javadocs is encouraged.
