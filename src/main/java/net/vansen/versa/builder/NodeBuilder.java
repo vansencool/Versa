@@ -237,7 +237,7 @@ public class NodeBuilder {
      * @return this builder
      */
     public @NotNull NodeBuilder emptyLine() {
-        n.order.add(new Entry(EntryType.EMPTY_LINE, ""));
+        n.emptyLine();
         return this;
     }
 

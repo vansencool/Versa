@@ -2,6 +2,7 @@ package net.vansen.versa.node;
 
 import net.vansen.versa.comments.Comment;
 import net.vansen.versa.comments.CommentType;
+import net.vansen.versa.language.Language;
 import net.vansen.versa.node.entry.Entry;
 import net.vansen.versa.node.entry.EntryType;
 import net.vansen.versa.node.insert.InsertPoint;
@@ -182,6 +183,38 @@ public class Node {
      * Ordered view of this node's contents for printing.
      */
     public List<Entry> order = new ArrayList<>();
+
+    /**
+     * This value is detected once while parsing by observing the
+     * first increase in indentation depth and is then propagated to
+     * child nodes during serialization.
+     * <p>
+     * Notes:<br>
+     * • This field is supported by both Versa and YAML formats.<br>
+     * • A value {@code <= 0} means the indent unit is unknown and a
+     *   default will be used.<br>
+     * • Standalone comments store their absolute indentation separately
+     *   and do not rely on this value.
+     */
+    public int indentUnit = -1;
+
+    /**
+     * Whether the original configuration text ended with a newline character, used in serialization.
+     */
+    private boolean endsWithNewline;
+
+    /**
+     * The preferred language to use when serializing this node via
+     * language-agnostic methods such as {@link #toString()}.
+     * <p>
+     * This field does not affect how the node stores data internally.
+     * All nodes remain fully mutable and editable at runtime, regardless
+     * of language.
+     * <p>
+     * Parsing may auto-detect the input language, but this value determines
+     * the default output language unless explicitly overridden.
+     */
+    private Language language = Language.VERSA;
 
     /**
      * Returns the first child branch with the given name.
@@ -681,6 +714,55 @@ public class Node {
     }
 
     /**
+     * Sets the preferred output language for this node.
+     * <p>
+     * This affects the behavior of {@link #toString()} only and does not
+     * modify the underlying data or formatting metadata.
+     *
+     * @param language the language to use when serializing this node
+     * @return this node (for chaining)
+     */
+    public Node language(Language language) {
+        this.language = language;
+        return this;
+    }
+
+    /**
+     * Returns the preferred language used when serializing this node
+     * via language-agnostic methods such as {@link #toString()}.
+     *
+     * @return the current output language
+     */
+    public Language language() {
+        return language;
+    }
+
+    /**
+     * Returns whether this configuration should end with a newline
+     * when serialized.
+     *
+     * @return {@code true} if a trailing newline should be emitted
+     */
+    public boolean endsWithNewline() {
+        return endsWithNewline;
+    }
+
+    /**
+     * Sets whether this configuration should end with a newline
+     * when serialized.
+     * <p>
+     * This method allows callers to explicitly control end-of-file
+     * formatting regardless of the original input.
+     *
+     * @param endsWithNewline {@code true} to emit a trailing newline
+     * @return this node (for chaining)
+     */
+    public Node endsWithNewline(boolean endsWithNewline) {
+        this.endsWithNewline = endsWithNewline;
+        return this;
+    }
+
+    /**
      * Adds a child branch to this node and preserves ordering.
      *
      * @param child branch to append
@@ -756,11 +838,26 @@ public class Node {
     }
 
     /**
-     * Renders this node and its children to a configuration string,
-     * using the given indentation depth.
+     * Serializes this node and its children using the Versa configuration syntax.
+     * <p>
+     * The {@code depth} parameter controls the logical nesting level and is
+     * translated into indentation using {@link #indentUnit} when available,
+     * otherwise a default is used.
+     * <p>
+     * Notes:<br>
+     * • This method always emits Versa syntax, regardless of {@link #language}.<br>
+     * • Both Versa and YAML respect {@link #indentUnit} for structural indentation.<br>
+     * • Formatting, ordering, and comments are preserved as stored in the node.<br>
+     * • Inline comments are rendered only when attached to the element they
+     *   belong to.<br>
+     * • End-of-file newline behavior is controlled by {@link #endsWithNewline}.
+     *
+     * @param depth the current nesting depth
+     * @return the Versa representation of this node
      */
-    public String toString(int depth) {
-        String pad = "    ".repeat(depth);
+    public String toStringVersa(int depth) {
+        int unit = indentUnit > 0 ? indentUnit : 4;
+        String pad = " ".repeat(depth * unit);
         StringBuilder sb = new StringBuilder();
 
         for (Entry e : order) {
@@ -786,10 +883,14 @@ public class Node {
 
             if (e.t == EntryType.VALUE) {
                 Value v = (Value) e.o;
+
+                if (v.name == null)
+                    continue;
+
                 sb.append(pad)
                         .append(v.name)
                         .append(v.assign == ':' ? ": " : " = ")
-                        .append(v);
+                        .append(v.toStringVersa());
 
                 for (Comment c : v.comments)
                     if (c.type == CommentType.INLINE_VALUE) {
@@ -805,6 +906,51 @@ public class Node {
 
             if (e.t == EntryType.BRANCH) {
                 Node ch = (Node) e.o;
+                ch.indentUnit = unit;
+
+                boolean hasUnnamed = false;
+                boolean hasNamed = false;
+
+                for (Entry ce : ch.order) {
+                    if (ce.t == EntryType.VALUE) {
+                        Value v = (Value) ce.o;
+                        if (v.name == null) hasUnnamed = true;
+                        else hasNamed = true;
+                    }
+                }
+
+                if (hasUnnamed && !hasNamed) {
+                    sb.append(pad)
+                            .append(ch.name)
+                            .append(" = [\n");
+
+                    for (Entry ce : ch.order) {
+                        if (ce.t != EntryType.VALUE) continue;
+                        Value v = (Value) ce.o;
+                        if (v.name != null) continue;
+
+                        sb.append(" ".repeat((depth + 1) * unit))
+                                .append(v.toStringVersa())
+                                .append(",\n");
+                    }
+
+                    int len = sb.length();
+                    if (sb.charAt(len - 2) == ',') {
+                        sb.setLength(len - 2);
+                        sb.append("\n");
+                    }
+
+                    sb.append(pad).append("]\n");
+
+                    for (Entry ce : ch.order) {
+                        if (ce.t == EntryType.COMMENT || ce.t == EntryType.EMPTY_LINE)
+                            sb.append(pad).append(ce.t == EntryType.COMMENT
+                                    ? ((Comment) ce.o).slash ? "//" + ((Comment) ce.o).text : "#" + ((Comment) ce.o).text
+                                    : "").append("\n");
+                    }
+
+                    continue;
+                }
 
                 sb.append(pad).append(ch.name).append(" {");
 
@@ -814,15 +960,14 @@ public class Node {
                         sb.append(" ").append(c.slash ? "//" : "#").append(lines[0]).append("\n");
 
                         for (int i = 1; i < lines.length; i++)
-                            sb.append(pad)
-                                    .append("    ")
+                            sb.append(" ".repeat((depth + 1) * unit))
                                     .append(c.slash ? "//" : "#")
                                     .append(lines[i])
                                     .append("\n");
                     }
 
                 sb.append("\n");
-                sb.append(ch.toString(depth + 1));
+                sb.append(ch.toStringVersa(depth + 1));
                 sb.append(pad).append("}");
 
                 for (Comment c : ch.inlineComments)
@@ -831,8 +976,7 @@ public class Node {
                         sb.append(" ").append(c.slash ? "//" : "#").append(lines[0]).append("\n");
 
                         for (int i = 1; i < lines.length; i++)
-                            sb.append(pad)
-                                    .append("    ")
+                            sb.append(" ".repeat((depth + 1) * unit))
                                     .append(c.slash ? "//" : "#")
                                     .append(lines[i])
                                     .append("\n");
@@ -841,17 +985,177 @@ public class Node {
                 sb.append("\n");
             }
         }
+
+        if (depth == 0) {
+            int len = sb.length();
+            while (len > 0 && sb.charAt(len - 1) == '\n')
+                len--;
+
+            sb.setLength(len);
+
+            if (endsWithNewline)
+                sb.append('\n');
+        }
+
         return sb.toString();
     }
 
     /**
-     * Renders this node as a configuration string.
+     * Serializes this node as a top-level Versa configuration document.
      *
-     * @return Rendered configuration
+     * @return the Versa configuration text
+     */
+    public String toStringVersa() {
+        return toStringVersa(0);
+    }
+
+    /**
+     * Serializes this node using the language specified by {@link #language}.
+     *
+     * @return the rendered configuration text
      */
     @Override
     public String toString() {
-        return toString(0);
+        if (language == Language.VERSA) {
+            return toStringVersa();
+        }
+        else if (language == Language.YAML) {
+            return toStringYaml();
+        }
+        throw new RuntimeException("Please add the new language to Node#toString!");
+    }
+
+    /**
+     * Serializes this node and its children into YAML format.
+     * <p>
+     * The {@code depth} parameter represents the logical nesting level
+     * and is converted to spaces using {@link #indentUnit}.
+     * <p>
+     * Notes:<br>
+     * • This method is YAML-specific and is not used by the Versa format.<br>
+     * • Structural indentation is computed as {@code depth * indentUnit}.<br>
+     * • Standalone comments use their own absolute indentation and do not
+     *   rely on {@code depth}.<br>
+     *
+     * @param depth the current YAML indentation depth
+     * @return the YAML representation of this node
+     */
+    public String toStringYaml(int depth) {
+        int unit = indentUnit > 0 ? indentUnit : 2;
+        String pad = " ".repeat(depth * unit);
+
+        StringBuilder sb = new StringBuilder();
+
+        for (Entry e : order) {
+
+            if (e.t == EntryType.EMPTY_LINE) {
+                sb.append("\n");
+                continue;
+            }
+
+            if (e.t == EntryType.COMMENT) {
+                Comment c = (Comment) e.o;
+                String[] lines = c.text.split("\\R");
+                for (String line : lines) {
+                    sb.append(" ".repeat(c.indent))
+                            .append("#")
+                            .append(line)
+                            .append("\n");
+                }
+                continue;
+            }
+
+            if (e.t == EntryType.VALUE) {
+                Value v = (Value) e.o;
+
+                if (v.name == null) {
+                    sb.append(pad)
+                            .append("- ")
+                            .append(v.toStringYaml())
+                            .append("\n");
+                    continue;
+                }
+
+                String rendered = v.toStringYaml();
+
+                sb.append(pad).append(v.name).append(":");
+
+                if (rendered.indexOf('\n') != -1) {
+                    sb.append("\n");
+                    for (String line : rendered.split("\\R"))
+                        sb.append(pad)
+                                .append(" ".repeat(unit))
+                                .append(line)
+                                .append("\n");
+                } else {
+                    sb.append(" ").append(rendered).append("\n");
+                }
+
+                for (Comment c : v.comments)
+                    if (c.type == CommentType.INLINE_VALUE)
+                        sb.append(" #").append(c.text);
+
+                sb.append("\n");
+                continue;
+            }
+
+            if (e.t == EntryType.BRANCH) {
+                Node ch = (Node) e.o;
+                ch.indentUnit = unit;
+
+                sb.append(pad).append(ch.name).append(":");
+
+                boolean hadInline = false;
+                for (Comment c : ch.inlineComments)
+                    if (c.type == CommentType.START_BRANCH) {
+                        String[] lines = c.text.split("\\R");
+                        sb.append(" #").append(lines[0]).append("\n");
+                        for (int i = 1; i < lines.length; i++)
+                            sb.append(pad)
+                                    .append(" ".repeat(unit))
+                                    .append("#")
+                                    .append(lines[i])
+                                    .append("\n");
+                        hadInline = true;
+                    }
+
+                if (!hadInline) sb.append("\n");
+
+                sb.append(ch.toStringYaml(depth + 1));
+
+                for (Comment c : ch.inlineComments)
+                    if (c.type == CommentType.END_BRANCH) {
+                        String[] lines = c.text.split("\\R");
+                        for (String line : lines)
+                            sb.append(pad).append("#").append(line).append("\n");
+                    }
+            }
+        }
+
+        if (depth == 0) {
+            int len = sb.length();
+            while (len > 0 && sb.charAt(len - 1) == '\n')
+                len--;
+
+            sb.setLength(len);
+
+            if (endsWithNewline)
+                sb.append('\n');
+        }
+
+        return sb.toString();
+    }
+
+    /**
+     * Serializes this node as a top-level YAML document.
+     * <p>
+     * This is equivalent to calling {@link #toStringYaml(int)} with
+     * a depth of {@code 0}.
+     *
+     * @return the YAML representation of this node
+     */
+    public String toStringYaml() {
+        return toStringYaml(0);
     }
 
     /**

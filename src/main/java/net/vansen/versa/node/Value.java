@@ -153,10 +153,14 @@ public class Value {
     }
 
     /**
-     * Converts this value to its config-text representation.
+     * Converts this value to its Versa configuration text representation.
+     * <p>
+     * This method renders only the value itself and does not include
+     * any surrounding key, assignment operator, or indentation.
+     *
+     * @return the Versa representation of this value
      */
-    @Override
-    public String toString() {
+    public String toStringVersa() {
         if (isString()) return "\"" + sv + "\"";
         if (isBool()) return iv == 1 ? "true" : "false";
         if (isInt() || isLong()) return Long.toString(iv);
@@ -165,7 +169,7 @@ public class Value {
             StringBuilder b = new StringBuilder("[");
             for (int i = 0; i < list.size(); i++) {
                 if (i > 0) b.append(", ");
-                b.append(list.get(i));
+                b.append(list.get(i).toStringVersa());
             }
             b.append("]");
             return b.toString();
@@ -173,12 +177,47 @@ public class Value {
         if (isListOfBranches()) {
             StringBuilder b = new StringBuilder("[\n");
             for (int i = 0; i < branchList.size(); i++) {
-                b.append("    {\n").append(branchList.get(i).toString(2)).append("    }");
+                b.append("    {\n").append(branchList.get(i).toStringVersa(2)).append("    }");
                 if (i < branchList.size() - 1) b.append(",\n");
             }
             b.append("\n]");
             return b.toString();
         }
+        return "";
+    }
+
+    /**
+     * Converts this value to its YAML text representation.
+     * <p>
+     * This method renders only the value itself and does not include
+     * the key name, colon, list marker, or indentation.
+     *
+     * @return the YAML representation of this value
+     */
+    public String toStringYaml() {
+        if (isString()) return "\"" + sv.replace("\n", "\\n") + "\"";
+        if (isBool()) return iv == 1 ? "true" : "false";
+        if (isInt() || isLong()) return Long.toString(iv);
+        if (isFloat() || isDouble()) return Double.toString(dv);
+
+        if (isList()) {
+            StringBuilder b = new StringBuilder();
+            for (Value v : list) {
+                b.append("- ").append(v.toStringYaml()).append("\n");
+            }
+            if (!b.isEmpty()) b.setLength(b.length() - 1);
+            return b.toString();
+        }
+
+        if (isListOfBranches()) {
+            StringBuilder b = new StringBuilder();
+            for (Node n : branchList) {
+                b.append("-\n").append(n.toStringYaml(1));
+            }
+            if (!b.isEmpty()) b.setLength(b.length() - 1);
+            return b.toString();
+        }
+
         return "";
     }
 }

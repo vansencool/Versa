@@ -1,6 +1,6 @@
 package net.vansen.versa.annotations.loader;
 
-import net.vansen.versa.Versa;
+import net.vansen.fursconfig.file.FileTextReader;
 import net.vansen.versa.annotations.Branch;
 import net.vansen.versa.annotations.ConfigBranchComment;
 import net.vansen.versa.annotations.ConfigBranchHeader;
@@ -9,6 +9,7 @@ import net.vansen.versa.annotations.ConfigComment;
 import net.vansen.versa.annotations.ConfigFile;
 import net.vansen.versa.annotations.ConfigPath;
 import net.vansen.versa.annotations.ConfigSpace;
+import net.vansen.versa.annotations.YAML;
 import net.vansen.versa.annotations.adapter.Adapters;
 import net.vansen.versa.annotations.adapter.ConfigAdapter;
 import net.vansen.versa.builder.NodeBuilder;
@@ -16,6 +17,8 @@ import net.vansen.versa.builder.ValueBuilder;
 import net.vansen.versa.comments.CommentType;
 import net.vansen.versa.node.Node;
 import net.vansen.versa.node.Value;
+import net.vansen.versa.parser.VersaParser;
+import net.vansen.versa.parser.YamlParser;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 
@@ -59,7 +62,6 @@ import java.util.Map;
  * <p><b>Note:</b> Versa Config Loader is still in active development.
  * Expect API changes and occasional bugs.</p>
  */
-
 @SuppressWarnings({"unused", "unchecked"})
 public final class ConfigLoader {
 
@@ -136,7 +138,14 @@ public final class ConfigLoader {
             ConfigFile file = rootCls.getAnnotation(ConfigFile.class);
             if (file == null) return;
 
-            Node root = Versa.parse(file.value());
+            YAML yamlAnn = rootCls.getAnnotation(YAML.class);
+            Node root;
+            if (yamlAnn != null) {
+                root = new YamlParser(FileTextReader.read(file.value())).parse();
+            }
+            else {
+                root = new VersaParser(FileTextReader.read(file.value())).parse();
+            }
             nodes.put(rootCls, root);
 
             for (Field f : rootCls.getDeclaredFields()) {
@@ -358,19 +367,19 @@ public final class ConfigLoader {
             Class<?> type = f.getType();
 
             ConfigAdapter<?> adType = Adapters.get(type);
-            ConfigSpace sp = f.getAnnotation(ConfigSpace.class);
-            ConfigComment cc = f.getAnnotation(ConfigComment.class);
+            ConfigSpace[] spaces = f.getAnnotationsByType(ConfigSpace.class);
+            ConfigComment[] comments = f.getAnnotationsByType(ConfigComment.class);
 
             String path = cp != null ? cp.value() : null;
 
             if (adType != null && cp != null) {
-                emitBefore(base, path, sp);
+                emitBefore(base, path, spaces);
 
                 NodeBuilder nb = new NodeBuilder().name(path);
                 ((ConfigAdapter<Object>) adType).toNode(def, nb);
                 base.child(nb);
 
-                emitAfterBranch(base, path, sp, cc);
+                emitAfterBranch(base, path, spaces, comments);
                 return;
             }
 
@@ -388,26 +397,27 @@ public final class ConfigLoader {
 
             if (List.class.isAssignableFrom(type)) {
                 if (def == null) def = List.of();
-                emitBefore(t, key, sp);
+                emitBefore(t, key, spaces);
 
-                emitListValue(t, key, f, def, cc);
+                emitListValue(t, key, f, def, comments);
 
-                emitAfterValue(t, key, sp, cc);
+                emitAfterValue(t, key, spaces, comments);
                 return;
             }
 
             if (def == null) return;
 
-            emitBefore(t, key, sp);
+            emitBefore(t, key, spaces);
 
             ValueBuilder vb = ValueBuilder.builder(asValue(def)).name(key);
 
-            if (cc != null && cc.inline())
-                vb.comment(CommentType.INLINE_VALUE, cc.value());
+            for (ConfigComment cc : comments)
+                if (cc.inline())
+                    vb.comment(CommentType.INLINE_VALUE, cc.value());
 
             t.add(vb.build());
 
-            emitAfterValue(t, key, sp, cc);
+            emitAfterValue(t, key, spaces, comments);
 
         } catch (Throwable e) {
             throw new RuntimeException(e);
@@ -484,10 +494,14 @@ public final class ConfigLoader {
             @NotNull String key,
             @NotNull Field f,
             @NotNull Object def,
-            ConfigComment cc
+            ConfigComment[] comments
     ) {
         List<?> list = (List<?>) def;
         ValueBuilder vb = new ValueBuilder().name(key);
+
+        for (ConfigComment cc : comments)
+            if (cc.inline())
+                vb.comment(CommentType.INLINE_VALUE, cc.value());
 
         if (list.isEmpty()) {
             base.add(vb.list().build());
@@ -518,35 +532,44 @@ public final class ConfigLoader {
         base.add(vb.list(vals.toArray(new Value[0])).build());
     }
 
-    private static void emitBefore(NodeBuilder base, String key, ConfigSpace sp) {
-        if (sp != null && sp.before())
-            base.before(key).emptyLine();
+    private static void emitBefore(
+            NodeBuilder base,
+            String key,
+            ConfigSpace[] spaces
+    ) {
+        for (ConfigSpace sp : spaces)
+            if (sp.before())
+                base.before(key).emptyLine();
     }
 
     private static void emitAfterValue(
             NodeBuilder base,
             String key,
-            ConfigSpace sp,
-            ConfigComment cc
+            ConfigSpace[] spaces,
+            ConfigComment[] comments
     ) {
-        if (cc != null && !cc.inline())
-            base.before(key).comment(cc.value());
+        for (ConfigComment cc : comments)
+            if (!cc.inline())
+                base.before(key).comment(cc.value());
 
-        if (sp != null && sp.after())
-            base.after(key).emptyLine();
+        for (ConfigSpace sp : spaces)
+            if (sp.after())
+                base.after(key).emptyLine();
     }
 
     private static void emitAfterBranch(
             NodeBuilder base,
             String key,
-            ConfigSpace sp,
-            ConfigComment cc
+            ConfigSpace[] spaces,
+            ConfigComment[] comments
     ) {
-        if (cc != null && !cc.inline())
-            base.afterBranch(key).comment(cc.value());
+        for (ConfigComment cc : comments)
+            if (!cc.inline())
+                base.afterBranch(key).comment(cc.value());
 
-        if (sp != null && sp.after())
-            base.afterBranch(key).emptyLine();
+        for (ConfigSpace sp : spaces)
+            if (sp.after())
+                base.afterBranch(key).emptyLine();
     }
 
     private static @NotNull NodeBuilder getOrCreate(

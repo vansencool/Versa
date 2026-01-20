@@ -3,6 +3,7 @@ package net.vansen.versa.annotations;
 import org.jetbrains.annotations.NotNull;
 
 import java.lang.annotation.ElementType;
+import java.lang.annotation.Repeatable;
 import java.lang.annotation.Retention;
 import java.lang.annotation.RetentionPolicy;
 import java.lang.annotation.Target;
@@ -29,6 +30,7 @@ import java.lang.annotation.Target;
  * host = "127.0.0.1" # Local bind address
  * </pre>
  */
+@Repeatable(ConfigComments.class)
 @Retention(RetentionPolicy.RUNTIME)
 @Target(ElementType.FIELD)
 public @interface ConfigComment {

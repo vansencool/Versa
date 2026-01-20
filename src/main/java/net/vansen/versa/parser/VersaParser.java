@@ -2,6 +2,7 @@ package net.vansen.versa.parser;
 
 import net.vansen.versa.comments.Comment;
 import net.vansen.versa.comments.CommentType;
+import net.vansen.versa.language.Language;
 import net.vansen.versa.logger.VersaLog;
 import net.vansen.versa.node.Node;
 import net.vansen.versa.node.Value;
@@ -36,6 +37,7 @@ public class VersaParser {
     private final Deque<Node> stack = new ArrayDeque<>();
     public Consumer<String> errorHandler = System.out::println;
     private boolean strict = true;
+    private final boolean endsWithNewline;
     private int ln;
 
     /**
@@ -45,6 +47,7 @@ public class VersaParser {
      */
     public VersaParser(@NotNull String s) {
         this.lines = split(s);
+        this.endsWithNewline = s.endsWith("\n");
         ln = 0;
     }
 
@@ -81,13 +84,23 @@ public class VersaParser {
      */
     public @NotNull Node parse() {
         Node root = new Node();
+        root.endsWithNewline(endsWithNewline);
+        root.language(Language.VERSA);
         stack.push(root);
+
+        int detectedIndent = -1;
+        int lastCol = 0;
 
         while (ln < lines.length) {
             String raw = lines[ln];
             int col = 0;
             while (col < raw.length() && (raw.charAt(col) == ' ' || raw.charAt(col) == '\t')) col++;
             String rest = raw.substring(col).strip();
+
+            if (detectedIndent <= 0 && col > lastCol)
+                detectedIndent = col - lastCol;
+
+            lastCol = col;
 
             if (rest.isBlank()) {
                 stack.peek().order.add(new Entry(EntryType.EMPTY_LINE, null));
@@ -130,6 +143,8 @@ public class VersaParser {
 
                 Node n = new Node();
                 n.name = name;
+                n.language(Language.VERSA);
+                n.indentUnit = detectedIndent;
                 stack.peek().children.add(n);
                 stack.peek().order.add(new Entry(EntryType.BRANCH, n));
                 stack.push(n);
@@ -173,6 +188,7 @@ public class VersaParser {
         if (stack.size() > 1)
             error("Reached end of file but '" + stack.peek().name + "' was never closed with '}'");
 
+        root.indentUnit = detectedIndent;
         return root;
     }
 
@@ -325,20 +341,37 @@ public class VersaParser {
         boolean q = false;
         int start = 0;
 
+        boolean lastEndedObject = false;
+
         for (int i = 0; i < s.length(); i++) {
             char c = s.charAt(i);
-            if (c == '"' && !(i > 0 && s.charAt(i - 1) == '\\')) q = !q;
+
+            if (c == '"' && !(i > 0 && s.charAt(i - 1) == '\\'))
+                q = !q;
+
             if (!q) {
                 if (c == '{' || c == '[') d++;
                 if (c == '}' || c == ']') d--;
-            }
-            if (c == ',' && d == 0) {
-                out.add(parseListElement(s.substring(start, i).trim()));
-                start = i + 1;
+
+                if (c == '}' && d == 0) {
+                    lastEndedObject = true;
+                }
+
+                if (c == ',' && d == 0) {
+                    lastEndedObject = false;
+                    out.add(parseListElement(s.substring(start, i)));
+                    start = i + 1;
+                }
+
+                if (lastEndedObject && c == '{') {
+                    fail("Missing ',' between list elements", s);
+                }
             }
         }
 
-        if (start < s.length()) out.add(parseListElement(s.substring(start).trim()));
+        if (start < s.length())
+            out.add(parseListElement(s.substring(start)));
+
         return out;
     }
 

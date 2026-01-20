@@ -20,6 +20,22 @@ public class Comment {
     public String text;
 
     /**
+     * Absolute indentation level of this comment, measured in spaces.
+     * <p>
+     * This value is used primarily by indentation-sensitive formats
+     * such as YAML, where standalone comments must preserve their
+     * original column position.
+     * <p>
+     * Notes:<br>
+     * • This value represents raw space count, not logical depth.<br>
+     * • Inline comments typically ignore this field and are rendered
+     *   relative to the element they are attached to.<br>
+     * • Versa serialization ignores this value, while YAML
+     *   serialization relies on it for accurate formatting.
+     */
+    public int indent;
+
+    /**
      * True = print using //, false = print using #
      */
     public boolean slash;
