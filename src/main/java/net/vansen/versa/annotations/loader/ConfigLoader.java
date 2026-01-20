@@ -15,6 +15,7 @@ import net.vansen.versa.annotations.adapter.ConfigAdapter;
 import net.vansen.versa.builder.NodeBuilder;
 import net.vansen.versa.builder.ValueBuilder;
 import net.vansen.versa.comments.CommentType;
+import net.vansen.versa.language.Language;
 import net.vansen.versa.node.Node;
 import net.vansen.versa.node.Value;
 import net.vansen.versa.parser.VersaParser;
@@ -342,6 +343,9 @@ public final class ConfigLoader {
 
     private static @NotNull Node buildFromDefaults(@NotNull Class<?> rootCls) {
         NodeBuilder root = new NodeBuilder();
+        if (rootCls.getAnnotation(YAML.class) != null) {
+            root.build().language(Language.YAML);
+        }
 
         for (Field f : rootCls.getDeclaredFields()) {
             if (!Modifier.isStatic(f.getModifiers())) continue;
